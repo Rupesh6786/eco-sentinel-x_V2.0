@@ -127,7 +127,7 @@ export function LoginScreen() {
               {mode === "signup" && (
                 <div className="space-y-1.5">
                   <Label htmlFor="name">Operator name</Label>
-                  <Input id="name" placeholder="Parth Nachane" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                  <Input id="name" placeholder="Rupesh Thakur" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
                 </div>
               )}
               <div className="space-y-1.5">
