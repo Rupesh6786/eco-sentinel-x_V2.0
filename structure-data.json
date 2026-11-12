@@ -1,0 +1,140 @@
+{
+  "_description": "Eco-Sentinal-X Firestore structure. Every account gets a unique Node ID (NODE-XXXXXX, shown on the Profile page). The ESP32 signs in as that user and adds ONE document per sample to nodes/{nodeId}/readings. Only the owner can read/write their node.",
+  "firestore": {
+    "users/{uid}": {
+      "email": "you@example.com",
+      "displayName": "Operator",
+      "nodeId": "NODE-7KQ2X9",
+      "sensors": [
+        "mq2",
+        "mq7",
+        "mq135",
+        "dust",
+        "env",
+        "power"
+      ],
+      "themeId": 7,
+      "themeMode": "dark",
+      "createdAt": "serverTimestamp"
+    },
+    "node_index/{nodeId}": {
+      "uid": "firebase auth uid of the owner",
+      "createdAt": "serverTimestamp"
+    },
+    "nodes/{nodeId}/readings/{autoId}": {
+      "deviceId": "NODE-7KQ2X9",
+      "timestamp": "Firestore Timestamp (serverTimestamp) OR epoch milliseconds number, e.g. 1790930400000",
+      "mq2_ppm": 212.4,
+      "mq7_ppm": 21.8,
+      "mq135_ppm": 64.3,
+      "pm25": 31.2,
+      "pm10": 49.7,
+      "dust_density": 0.051,
+      "temperature": 29.6,
+      "humidity": 61.0,
+      "battery_voltage": 3.94,
+      "battery_percent": 78,
+      "boost_voltage": 5.03,
+      "charging": true,
+      "rssi": -63,
+      "free_heap": 178432,
+      "uptime_s": 14520,
+      "aqi": 91
+    },
+    "nodes/{nodeId}/settings/config": {
+      "sample_interval_s": 10,
+      "buzzer_enabled": true,
+      "mq2_threshold": 300,
+      "mq7_threshold": 50,
+      "pm25_threshold": 60,
+      "wifi_ssid": "MyWiFi",
+      "mqtt_broker": "",
+      "firmware_version": "1.0.0",
+      "mq135_threshold": 100
+    }
+  },
+  "field_units": {
+    "mq2_ppm": "ppm (Smoke/LPG, MQ-2)",
+    "mq7_ppm": "ppm (Carbon Monoxide, MQ-7)",
+    "pm25": "µg/m³",
+    "pm10": "µg/m³",
+    "dust_density": "mg/m³ (Sharp GP2Y1014)",
+    "temperature": "°C (DHT11)",
+    "humidity": "% RH (DHT11)",
+    "battery_voltage": "V",
+    "battery_percent": "%",
+    "boost_voltage": "V (MT3608 output)",
+    "charging": "bool (TP4056 CHRG pin)",
+    "rssi": "dBm (WiFi.RSSI())",
+    "free_heap": "bytes (ESP.getFreeHeap())",
+    "uptime_s": "seconds (millis()/1000)",
+    "aqi": "optional — dashboard computes it from pm25 if omitted",
+    "mq135_ppm": "ppm (NH3/benzene/alcohol/CO2 eq., MQ-135)"
+  },
+  "esp32_upload_example": {
+    "method": "POST",
+    "url": "https://firestore.googleapis.com/v1/projects/studio-1142491547-98533/databases/(default)/documents/nodes/NODE-7KQ2X9/readings",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer <Firebase ID token of the account owning this node>"
+    },
+    "body": {
+      "fields": {
+        "deviceId": {
+          "stringValue": "NODE-7KQ2X9"
+        },
+        "timestamp": {
+          "timestampValue": "2026-10-02T08:40:00Z"
+        },
+        "mq2_ppm": {
+          "doubleValue": 212.4
+        },
+        "mq7_ppm": {
+          "doubleValue": 21.8
+        },
+        "mq135_ppm": {
+          "doubleValue": 64.3
+        },
+        "pm25": {
+          "doubleValue": 31.2
+        },
+        "pm10": {
+          "doubleValue": 49.7
+        },
+        "dust_density": {
+          "doubleValue": 0.051
+        },
+        "temperature": {
+          "doubleValue": 29.6
+        },
+        "humidity": {
+          "doubleValue": 61.0
+        },
+        "battery_voltage": {
+          "doubleValue": 3.94
+        },
+        "battery_percent": {
+          "integerValue": "78"
+        },
+        "boost_voltage": {
+          "doubleValue": 5.03
+        },
+        "charging": {
+          "booleanValue": true
+        },
+        "rssi": {
+          "integerValue": "-63"
+        },
+        "free_heap": {
+          "integerValue": "178432"
+        },
+        "uptime_s": {
+          "integerValue": "14520"
+        }
+      }
+    },
+    "arduino_library_alternative": "Firebase-ESP-Client (mobizt): Firebase.Firestore.createDocument(&fbdo, PROJECT_ID, \"\", \"sensor_readings\", content.raw()) with timestamp set via content.set(\"fields/timestamp/timestampValue\", isoTime)",
+    "auth_note": "Get the ID token via POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=YOUR_WEB_API_KEY with {email,password,returnSecureToken:true}. Google-only accounts: add an email/password to the account or use a dedicated device account."
+  },
+  "firestore_rules_suggestion": "See firebase.rules — readings are only readable/writable by the account that owns the node."
+}

@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Eco-Sentinal-X Firestore security rules — per-user node isolation.
+//   users/{uid}                     : profile (nodeId, sensors, themeId, themeMode) — owner only
+//   node_index/{nodeId}             : nodeId -> uid ownership map
+//   nodes/{nodeId}/readings/{auto}  : ESP32 uploads (owner only)
+//   nodes/{nodeId}/settings/config  : device config (owner only)
+//
+// Deploy: Firebase Console → Firestore Database → Rules, or
+//   firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function ownsNode(nodeId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/node_index/$(nodeId))
+        && get(/databases/$(database)/documents/node_index/$(nodeId)).data.uid == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow read, update: if signedIn() && request.auth.uid == uid
+        && (request.method == 'get' || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['nodeId']));
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /node_index/{nodeId} {
+      // anyone signed in may check if an id is taken; only claim for yourself, once
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete, list: if false;
+    }
+
+    match /nodes/{nodeId} {
+      match /readings/{readingId} {
+        allow read, create: if ownsNode(nodeId);
+        allow update, delete: if false;
+      }
+      match /settings/{docId} {
+        allow read, write: if ownsNode(nodeId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
