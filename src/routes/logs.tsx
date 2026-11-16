@@ -8,16 +8,25 @@ import { Button } from "@/components/ui/button";
 import { meta } from "@/lib/meta";
 
 export const Route = createFileRoute("/logs")({
-  head: () => meta("Data Logs", "Searchable, sortable history of every ESP32 reading with date filters and PDF export."),
+  head: () => meta("Data Logs", "Searchable, sortable, horizontally scrollable history of every ESP32 reading with date filters and PDF export."),
   component: Logs,
 });
 
-const cols: { key: keyof Reading; label: string; d?: number }[] = [
+type Col = { key: keyof Reading; label: string; d?: number; bool?: boolean };
+const cols: Col[] = [
   { key: "ts", label: "Timestamp" }, { key: "aqi", label: "AQI", d: 0 },
   { key: "mq2_ppm", label: "MQ-2", d: 0 }, { key: "mq7_ppm", label: "MQ-7", d: 1 }, { key: "mq135_ppm", label: "MQ-135", d: 1 },
   { key: "pm25", label: "PM2.5", d: 1 }, { key: "pm10", label: "PM10", d: 1 },
-  { key: "temperature", label: "Temp °C", d: 1 }, { key: "humidity", label: "RH %", d: 0 },
-  { key: "battery_voltage", label: "Batt V", d: 2 }, { key: "rssi", label: "RSSI", d: 0 },
+  { key: "dust_density", label: "Dust mg/m³", d: 4 }, { key: "dust_vo_v", label: "Dust Vo V", d: 3 }, { key: "dust_baseline_v", label: "Dust Base V", d: 3 }, { key: "dust_ok", label: "Dust OK", bool: true },
+  { key: "temperature", label: "Temp °C", d: 1 }, { key: "probe_temp", label: "Probe °C", d: 2 }, { key: "humidity", label: "RH %", d: 0 },
+  { key: "dew_point", label: "Dew °C", d: 1 }, { key: "pressure", label: "Press hPa", d: 1 }, { key: "lux", label: "Lux", d: 0 },
+  { key: "battery_voltage", label: "Batt V", d: 3 }, { key: "battery_percent", label: "Batt %", d: 0 },
+  { key: "current_ma", label: "Current mA", d: 1 }, { key: "power_mw", label: "Power mW", d: 0 },
+  { key: "charging", label: "Charging", bool: true }, { key: "charge_complete", label: "Charged", bool: true }, { key: "boost_voltage", label: "Boost V", d: 2 },
+  { key: "chip_temp", label: "Chip °C", d: 1 }, { key: "cpu_mhz", label: "CPU MHz", d: 0 }, { key: "free_heap", label: "Heap B", d: 0 }, { key: "heap_min", label: "Heap Min B", d: 0 },
+  { key: "psram_free", label: "PSRAM Free", d: 0 }, { key: "frame_ms", label: "Frame ms", d: 1 }, { key: "uptime_s", label: "Uptime s", d: 0 },
+  { key: "rssi", label: "RSSI", d: 0 }, { key: "wifi_ok", label: "Wi-Fi", bool: true }, { key: "sd_ok", label: "SD", bool: true },
+  { key: "uploads_ok", label: "Uploads OK", d: 0 }, { key: "uploads_failed", label: "Uploads Fail", d: 0 },
 ];
 const PAGE = 25;
 
@@ -35,21 +44,27 @@ function Logs() {
     return readings
       .filter((r) => r.ts >= f && r.ts <= t)
       .filter((r) => !q || [fmtDateTime(r.ts), r.deviceId, ...cols.map((c) => String(r[c.key]))].join(" ").toLowerCase().includes(q.toLowerCase()))
-      .sort((a, b) => ((a[sort.k] as number) - (b[sort.k] as number)) * (sort.asc ? 1 : -1));
+      .sort((a, b) => (Number(a[sort.k] ?? 0) - Number(b[sort.k] ?? 0)) * (sort.asc ? 1 : -1));
   }, [readings, q, from, to, sort]);
 
-  const cell = (r: Reading, c: (typeof cols)[number]) => (c.key === "ts" ? fmtDateTime(r.ts) : (r[c.key] as number).toFixed(c.d ?? 1));
+  const cell = (r: Reading, c: Col) => {
+    const v = r[c.key] as unknown;
+    if (c.key === "ts") return fmtDateTime(r.ts);
+    if (v === undefined || v === null) return "—";
+    if (c.bool) return v ? "Yes" : "No";
+    return Number(v).toFixed(c.d ?? 1);
+  };
 
   async function exportPdf() {
     const { jsPDF } = await import("jspdf");
     const { default: autoTable } = await import("jspdf-autotable");
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFillColor(20, 20, 18); doc.rect(0, 0, 297, 24, "F");
+    const doc = new jsPDF({ orientation: "landscape", format: "a3" });
+    doc.setFillColor(20, 20, 18); doc.rect(0, 0, 420, 24, "F");
     doc.setTextColor(250, 214, 30); doc.setFontSize(18); doc.text("Eco-Sentinal-X · Sensor Report", 14, 15);
     doc.setTextColor(200, 200, 200); doc.setFontSize(9); doc.text(`Generated ${new Date().toLocaleString()} · ${rows.length} records`, 14, 21);
     autoTable(doc, {
       startY: 30, head: [cols.map((c) => c.label)], body: rows.map((r) => cols.map((c) => cell(r, c))),
-      styles: { fontSize: 8 }, headStyles: { fillColor: [250, 214, 30], textColor: [20, 20, 18] },
+      styles: { fontSize: 5, cellPadding: 1 }, headStyles: { fillColor: [250, 214, 30], textColor: [20, 20, 18] },
       alternateRowStyles: { fillColor: [245, 245, 240] },
     });
     doc.save(`eco-sentinal-x-report-${Date.now()}.pdf`);
@@ -60,7 +75,7 @@ function Logs() {
 
   return (
     <div>
-      <PageHeader code="06 / HISTORY" title="Historical Data Logs" subtitle="Every timestamped reading uploaded by the ESP32." />
+      <PageHeader code="06 / HISTORY" title="Historical Data Logs" subtitle="Every timestamped reading uploaded by the ESP32. Scroll sideways to see all columns." />
       <Panel title="Readings" tag={`${rows.length} RECORDS`}>
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="relative min-w-52 flex-1">
@@ -71,11 +86,11 @@ function Logs() {
           <label className="text-xs text-muted-foreground">To<Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} /></label>
           <Button onClick={exportPdf} className="font-semibold"><FileDown className="h-4 w-4" />Export High-Quality PDF Report</Button>
         </div>
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+        <div className="max-w-full overflow-x-auto rounded-md border">
+          <table className="w-max min-w-full text-sm">
             <thead className="bg-secondary">
               <tr>{cols.map((c) => (
-                <th key={c.key} className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">
+                <th key={c.key} className={`whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider ${c.key === "ts" ? "sticky left-0 z-10 bg-secondary" : ""}`}>
                   <button className="inline-flex items-center gap-1 hover:text-primary" onClick={() => setSort((s) => ({ k: c.key, asc: s.k === c.key ? !s.asc : false }))}>
                     {c.label}<ArrowUpDown className={`h-3 w-3 ${sort.k === c.key ? "text-primary" : "opacity-40"}`} />
                   </button>
@@ -84,7 +99,7 @@ function Logs() {
             <tbody className="font-mono">
               {view.map((r) => (
                 <tr key={r.id} className="border-t hover:bg-accent/40">
-                  {cols.map((c) => <td key={c.key} className="whitespace-nowrap px-3 py-2">{cell(r, c)}</td>)}
+                  {cols.map((c) => <td key={c.key} className={`whitespace-nowrap px-3 py-2 ${c.key === "ts" ? "sticky left-0 z-10 bg-background" : ""}`}>{cell(r, c)}</td>)}
                 </tr>
               ))}
               {!view.length && <tr><td colSpan={cols.length} className="p-8 text-center text-muted-foreground">No readings match.</td></tr>}

@@ -6,9 +6,9 @@ import { randomThemeId, type ThemeMode } from "./themes";
 // ============= Sensor catalog =============
 // Every gauge/graph group in the app maps to one of these keys. Users pick
 // their set on the Settings page; pages render only the enabled groups.
-export type SensorKey = "mq2" | "mq7" | "mq135" | "dust" | "env" | "power";
+export type SensorKey = "mq2" | "mq7" | "mq135" | "dust" | "env" | "power" | "light" | "probe";
 
-export const SENSOR_KEYS: SensorKey[] = ["mq2", "mq7", "mq135", "dust", "env", "power"];
+export const SENSOR_KEYS: SensorKey[] = ["mq2", "mq7", "mq135", "dust", "env", "power", "light", "probe"];
 
 export const SENSOR_META: Record<SensorKey, { label: string; desc: string }> = {
   mq2: { label: "MQ-2 · Smoke / LPG", desc: "Combustible gas concentration in ppm" },
@@ -17,7 +17,21 @@ export const SENSOR_META: Record<SensorKey, { label: string; desc: string }> = {
   dust: { label: "Dust · PM2.5 / PM10", desc: "Optical dust density and particulate matter" },
   env: { label: "DHT11 · Temperature & Humidity", desc: "Ambient climate readouts" },
   power: { label: "Power & System", desc: "Battery, TP4056 charging, Wi-Fi, heap and uptime" },
+  light: { label: "Light Intensity", desc: "Ambient illuminance in lux" },
+  probe: { label: "DS18B20 · Dallas Probe", desc: "Waterproof probe temperature in °C" },
 };
+
+// Sensors added after the first release. Profiles saved before
+// SENSOR_SCHEMA_VERSION 2 have no entry for them, so they default to ON
+// for those users instead of silently disappearing.
+const SENSOR_SCHEMA_VERSION = 2;
+const NEW_SENSOR_KEYS: SensorKey[] = ["light", "probe"];
+
+function resolveSensors(d: any): SensorKey[] {
+  const saved: unknown[] = Array.isArray(d?.sensors) ? d.sensors : SENSOR_KEYS;
+  const legacy = (typeof d?.sensorsVersion === "number" ? d.sensorsVersion : 1) < SENSOR_SCHEMA_VERSION;
+  return SENSOR_KEYS.filter((k) => saved.includes(k) || (legacy && NEW_SENSOR_KEYS.includes(k)));
+}
 
 // ============= Profile =============
 export type Profile = {
@@ -103,7 +117,7 @@ async function ensureProfile(user: User): Promise<Profile> {
       displayName: d.displayName ?? user.displayName ?? user.email?.split("@")[0] ?? "Operator",
       photoURL: d.photoURL ?? user.photoURL ?? null,
       nodeId: d.nodeId,
-      sensors: SENSOR_KEYS.filter((k) => (d.sensors ?? SENSOR_KEYS).includes(k)),
+      sensors: resolveSensors(d),
       themeId: Number.isInteger(d.themeId) && d.themeId >= 1 && d.themeId <= 10 ? d.themeId : 1,
       themeMode: d.themeMode === "light" ? "light" : "dark",
       createdAt: typeof d.createdAt?.toMillis === "function" ? d.createdAt.toMillis() : d.createdAt ?? Date.now(),
@@ -126,6 +140,7 @@ async function ensureProfile(user: User): Promise<Profile> {
         photoURL: user.photoURL ?? null,
         nodeId,
         sensors: SENSOR_KEYS,
+        sensorsVersion: SENSOR_SCHEMA_VERSION,
         themeId,
         themeMode: "dark",
         createdAt: serverTimestamp(),
@@ -156,7 +171,7 @@ async function ensureProfile(user: User): Promise<Profile> {
       displayName: d.displayName ?? "Operator",
       photoURL: d.photoURL ?? null,
       nodeId: d.nodeId,
-      sensors: SENSOR_KEYS.filter((k) => (d.sensors ?? SENSOR_KEYS).includes(k)),
+      sensors: resolveSensors(d),
       themeId: Number.isInteger(d.themeId) && d.themeId >= 1 && d.themeId <= 10 ? d.themeId : 1,
       themeMode: d.themeMode === "light" ? "light" : "dark",
       createdAt: Date.now(),
@@ -258,7 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { firestore: db } = await firebaseReady();
       const { doc, updateDoc } = await import("firebase/firestore");
-      await updateDoc(doc(db, "users", profile.uid), { sensors: next });
+      await updateDoc(doc(db, "users", profile.uid), { sensors: next, sensorsVersion: SENSOR_SCHEMA_VERSION });
     } catch (e: any) {
       setProfile(prev);
       throw new Error(e?.message ?? "Could not save sensor selection.");

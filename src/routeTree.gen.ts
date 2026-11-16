@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AirQualityRouteImport } from './routes/air-quality'
 import { Route as EnvironmentalRouteImport } from './routes/environmental'
+import { Route as LightRouteImport } from './routes/light'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as ParticulateRouteImport } from './routes/particulate'
 import { Route as PowerRouteImport } from './routes/power'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SystemRouteImport } from './routes/system'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -31,6 +33,11 @@ const AirQualityRoute = AirQualityRouteImport.update({
 const EnvironmentalRoute = EnvironmentalRouteImport.update({
   id: '/environmental',
   path: '/environmental',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LightRoute = LightRouteImport.update({
+  id: '/light',
+  path: '/light',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -58,37 +65,48 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemRoute = SystemRouteImport.update({
+  id: '/system',
+  path: '/system',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/air-quality': typeof AirQualityRoute
   '/environmental': typeof EnvironmentalRoute
+  '/light': typeof LightRoute
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
   '/profile': typeof ProfileRoute
   '/settings': typeof SettingsRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/air-quality': typeof AirQualityRoute
   '/environmental': typeof EnvironmentalRoute
+  '/light': typeof LightRoute
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
   '/profile': typeof ProfileRoute
   '/settings': typeof SettingsRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/air-quality': typeof AirQualityRoute
   '/environmental': typeof EnvironmentalRoute
+  '/light': typeof LightRoute
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
   '/profile': typeof ProfileRoute
   '/settings': typeof SettingsRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,42 +114,50 @@ export interface FileRouteTypes {
     | '/'
     | '/air-quality'
     | '/environmental'
+    | '/light'
     | '/logs'
     | '/particulate'
     | '/power'
     | '/profile'
     | '/settings'
+    | '/system'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/air-quality'
     | '/environmental'
+    | '/light'
     | '/logs'
     | '/particulate'
     | '/power'
     | '/profile'
     | '/settings'
+    | '/system'
   id:
     | '__root__'
     | '/'
     | '/air-quality'
     | '/environmental'
+    | '/light'
     | '/logs'
     | '/particulate'
     | '/power'
     | '/profile'
     | '/settings'
+    | '/system'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AirQualityRoute: typeof AirQualityRoute
   EnvironmentalRoute: typeof EnvironmentalRoute
+  LightRoute: typeof LightRoute
   LogsRoute: typeof LogsRoute
   ParticulateRoute: typeof ParticulateRoute
   PowerRoute: typeof PowerRoute
   ProfileRoute: typeof ProfileRoute
   SettingsRoute: typeof SettingsRoute
+  SystemRoute: typeof SystemRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -155,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/environmental'
       fullPath: '/environmental'
       preLoaderRoute: typeof EnvironmentalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/light': {
+      id: '/light'
+      path: '/light'
+      fullPath: '/light'
+      preLoaderRoute: typeof LightRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -192,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/system': {
+      id: '/system'
+      path: '/system'
+      fullPath: '/system'
+      preLoaderRoute: typeof SystemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -199,11 +239,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AirQualityRoute: AirQualityRoute,
   EnvironmentalRoute: EnvironmentalRoute,
+  LightRoute: LightRoute,
   LogsRoute: LogsRoute,
   ParticulateRoute: ParticulateRoute,
   PowerRoute: PowerRoute,
   ProfileRoute: ProfileRoute,
   SettingsRoute: SettingsRoute,
+  SystemRoute: SystemRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
