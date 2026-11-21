@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Copy, LogOut, Cpu, Mail, CalendarDays, SlidersHorizontal, FileDown, FlaskConical, Loader2 } from "lucide-react";
-import type { Firestore } from "firebase/firestore";
+import type { Firestore, QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth, SENSOR_META } from "@/lib/auth";
 import { useTelemetry, fmtDateTime, normalize, type Reading } from "@/lib/telemetry";
 import { PageHeader, Panel } from "@/components/eco/widgets";
@@ -32,10 +32,25 @@ async function fetchDay(db: Firestore, nodeId: string, day: Date): Promise<Readi
     [start, end],
     [Math.floor(start / 1000), Math.floor(end / 1000)],
   ];
+  // Firestore rejects limit() above 10,000, so read the day in pages instead.
+  const PAGE = 5000, MAX_ROWS = 100_000;
   for (const [a, b] of ranges) {
-    const q = fs.query(col, fs.where("timestamp", ">=", a), fs.where("timestamp", "<=", b), fs.orderBy("timestamp", "asc"), fs.limit(12000));
-    const snap = await fs.getDocs(q);
-    if (!snap.empty) return snap.docs.map((d) => normalize(d.id, d.data()));
+    const rows: Reading[] = [];
+    let cursor: QueryDocumentSnapshot | undefined;
+    while (rows.length < MAX_ROWS) {
+      const q = fs.query(
+        col,
+        fs.where("timestamp", ">=", a), fs.where("timestamp", "<=", b),
+        fs.orderBy("timestamp", "asc"),
+        ...(cursor ? [fs.startAfter(cursor)] : []),
+        fs.limit(PAGE),
+      );
+      const snap = await fs.getDocs(q);
+      for (const d of snap.docs) rows.push(normalize(d.id, d.data()));
+      if (snap.size < PAGE) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+    if (rows.length) return rows;
   }
   return [];
 }
@@ -84,7 +99,12 @@ function ReportPanel() {
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs text-muted-foreground">
           Report date
-          <Input type="date" max={todayStr()} value={dayStr} onChange={(e) => { setDayStr(e.target.value); setNotice(null); }} />
+          <Input
+            type="date" max={todayStr()} value={dayStr}
+            // Scroll the field to the middle of the screen so the native calendar popup has room below it.
+            onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
+            onChange={(e) => { setDayStr(e.target.value); setNotice(null); }}
+          />
         </label>
         <Button className="font-semibold" disabled={!dayStr || !!busy || status === "connecting"} onClick={() => run("day", dayStr)}>
           {busy === "day" ? spin : <FileDown className="h-4 w-4" />}Download report
@@ -110,7 +130,8 @@ function ProfilePage() {
   const copy = (v: string) => navigator.clipboard.writeText(v).then(() => toast.success("Copied"));
 
   return (
-    <div>
+    // pb-80: extra space under the report panel so the page can scroll far enough for the calendar popup to fit.
+    <div className="pb-80">
       <PageHeader code="08 / OPERATOR" title="Profile" subtitle="Your account and the ESP32 node linked to it. Only you can see this node's data." />
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Account" className="flex flex-col items-center text-center">
