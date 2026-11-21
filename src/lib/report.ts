@@ -104,6 +104,9 @@ type Ref = { y: number; color: string; label: string };
 
 class Kit {
   doc: jsPDF;
+  // visible part of the day on every time-axis chart (hours, 0..24); set from the data in buildReport
+  xLo = 0;
+  xHi = 24;
   constructor(doc: jsPDF) { this.doc = doc; }
   fill(h: string) { this.doc.setFillColor(...hex(h)); }
   stroke(h: string) { this.doc.setDrawColor(...hex(h)); }
@@ -182,7 +185,7 @@ class Kit {
       if (o.min === undefined) lo -= pad;
       if (o.max === undefined) hi += pad;
     }
-    const sx = (v: number) => px + (v / 24) * pw;
+    const sx = (v: number) => px + ((v - this.xLo) / (this.xHi - this.xLo)) * pw;
     const sy = (v: number) => py + ph - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * ph;
     const range = hi - lo, d = range >= 20 ? 0 : range >= 2 ? 1 : 2;
     this.doc.setLineWidth(0.4);
@@ -191,8 +194,16 @@ class Kit {
       this.stroke(C.line); this.doc.line(px, yy, px + pw, yy);
       this.text(v.toFixed(d), px - 4, yy + 2, 6, C.grey, false, "right");
     }
-    for (let hr = 0; hr < 24; hr += 4) this.text(`${String(hr).padStart(2, "0")}:00`, sx(hr), py + ph + 10, 6, C.grey, false, "center");
     this.stroke(C.line); this.doc.line(px, py + ph, px + pw, py + ph);
+    // time axis: only the hours that have data, with a tick step that keeps about 6 labels
+    const span = this.xHi - this.xLo;
+    const step = [0.25, 0.5, 1, 2, 3, 4, 6].find((s) => span / s <= 6) ?? 6;
+    for (let t = Math.ceil(this.xLo / step - 1e-9) * step; t <= this.xHi + 1e-9; t += step) {
+      const hh = Math.floor(t + 1e-9), mm = Math.round((t - hh) * 60);
+      const tx = sx(t);
+      this.stroke(C.line); this.doc.line(tx, py + ph, tx, py + ph + 2.5);
+      this.text(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, tx, py + ph + 10, 6, C.grey, false, "center");
+    }
     for (const l of live) {
       const pts = l.pts.map((p) => [sx(p.x), sy(p.y)] as [number, number]);
       if (l.fillTo !== undefined && pts.length > 1) {
@@ -259,7 +270,14 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   doc.setProperties({ title: `Environmental Monitoring Report - ${dateLong}`, author: SITE, subject: "Daily sensor report" });
   const k = new Kit(doc);
-  const ser = (pick: (r: Reading) => number | undefined) => bucketSeries(rs, start, pick);
+  // Plot only the part of the day that has data (whole hours), and size the averaging bucket to that span.
+  const hrOf = (ts: number) => (ts - start) / 3_600_000;
+  const xLo = Math.max(0, Math.floor(hrOf(rs[0]!.ts)));
+  const xHi = Math.min(24, Math.max(xLo + 1, Math.ceil(hrOf(last.ts))));
+  k.xLo = xLo; k.xHi = xHi;
+  const spanH = xHi - xLo;
+  const bucketMin = spanH <= 3 ? 2 : spanH <= 8 ? 5 : spanH <= 14 ? 10 : 15;
+  const ser = (pick: (r: Reading) => number | undefined) => bucketSeries(rs, start, pick, bucketMin);
   const hasP = rs.some((r) => isNum(r.pressure) && r.pressure > 300);
   const pPick = (r: Reading) => (isNum(r.pressure) && r.pressure > 300 ? r.pressure : undefined);
   const dewPick = (r: Reading) => (isNum(r.dew_point) ? r.dew_point : undefined);
@@ -303,10 +321,14 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   const y0 = 126;
   k.rect(M, y0, CW, 142, C.light, C.line, 6);
   k.rect(M + 10, y0 + 10, 104, 122, cat.color, undefined, 6);
-  k.text("Mean AQI", M + 62, y0 + 28, 7.5, cat.text, true, "center");
-  k.text(aqiMean.toFixed(0), M + 62, y0 + 72, 38, cat.text, true, "center");
-  const catLines = doc.splitTextToSize(cat.label, 88) as string[];
-  catLines.forEach((l, i) => k.text(l, M + 62, y0 + 88 + i * 10, 8, cat.text, true, "center"));
+  k.text("MEAN AQI", M + 62, y0 + 26, 7.5, cat.text, true, "center");
+  k.text(aqiMean.toFixed(0), M + 62, y0 + 66, 38, cat.text, true, "center");
+  // measure the label with the font it is drawn in (bold 8.5), otherwise the wrap width is wrong
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+  const catLines = doc.splitTextToSize(cat.label, 90) as string[];
+  const ly = y0 + 84;
+  catLines.forEach((l, i) => k.text(l, M + 62, ly + i * 10.5, 8.5, cat.text, true, "center"));
+  k.stroke(cat.text); doc.setLineWidth(0.4); doc.line(M + 26, y0 + 112, M + 98, y0 + 112);
   k.text(`peak ${fmt(S.aqi?.max, 0)} at ${S.aqi ? hhmm(S.aqi.tMax) : "-"}`, M + 62, y0 + 124, 7, cat.text, false, "center");
 
   const tx = M + 126, tw = CW - 136;
@@ -332,7 +354,7 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   });
 
   let cy = ky + 56 + 12;
-  k.section(cy, "Particulate matter", "PM2.5 and PM10, 15-minute averages"); cy += 20;
+  k.section(cy, "Particulate matter", `PM2.5 and PM10, ${bucketMin}-minute averages`); cy += 20;
   k.card(M, cy, CW, 166, "PM2.5 and PM10 trend", "µg/m³", C.red);
   k.lineChart(M + 4, cy + 20, CW - 8, 142, [{ name: "PM10", color: C.blue, pts: ser((r) => r.pm10), fillTo: 0 }, { name: "PM2.5", color: C.red, pts: ser((r) => r.pm25), fillTo: 0, width: 1.4 }], { min: 0, refs: [{ y: th.pm25, color: C.red, label: `Alarm limit ${th.pm25}` }] });
   cy += 166 + 12;
@@ -372,10 +394,12 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   k.card(M, y, CW, 140, "Ambient light", "lux", C.gold);
   k.lineChart(M + 4, y + 20, CW - 8, 116, [{ name: "Illuminance", color: C.gold, pts: ser((r) => r.lux), fillTo: 0 }], { min: 0 });
   y += 140 + 10;
-  const hourly = Array.from({ length: 24 }, (_, h) => {
+  const nBars = xHi - xLo, lblStep = nBars > 16 ? 3 : nBars > 8 ? 2 : 1;
+  const hourly = Array.from({ length: nBars }, (_, j) => {
+    const h = xLo + j;
     const v = rs.filter((r) => new Date(r.ts).getHours() === h).map((r) => r.aqi).filter(isNum);
     const m = v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
-    return { v: m, color: aqiCat(m).color, label: h % 3 === 0 ? `${String(h).padStart(2, "0")}h` : undefined };
+    return { v: m, color: aqiCat(m).color, label: j % lblStep === 0 ? `${String(h).padStart(2, "0")}h` : undefined };
   });
   k.card(M, y, hw, 142, "Hourly mean AQI", "index", C.red);
   k.bars(M + 4, y + 20, hw - 8, 118, hourly, Math.max(100, Math.ceil(Math.max(...hourly.map((b) => b.v)) / 50) * 50));
@@ -383,10 +407,11 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   k.card(M + hw + 12, y, hw, 142, "PM2.5 distribution", "samples", C.red);
   k.hBars(M + hw + 16, y + 22, hw - 8, 116, bands.map(([label, lo, hi, color]) => ({ label, color, v: rs.filter((r) => r.pm25 >= lo && r.pm25 < hi).length })));
   y += 142 + 14;
-  k.rect(M, y, CW, 800 - y, C.light, C.line, 6);
-  k.text("Reading the gas sensors", M + 12, y + 16, 9, C.ink, true);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8);
   const note = doc.splitTextToSize("MQ-series sensors respond to several gases at once and drift with temperature and humidity, so treat them as relative indicators of change rather than lab-grade concentrations. A reading above its limit is a prompt to check the room, not a diagnosis. For calibrated particulate values, compare the dust sensor with a reference monitor when possible.", CW - 24) as string[];
-  note.forEach((l, i) => k.text(l, M + 12, y + 30 + i * 11, 8, C.ink));
+  k.rect(M, y, CW, 30 + note.length * 11 + 6, C.light, C.line, 6);
+  k.text("Reading the gas sensors", M + 12, y + 17, 9, C.ink, true);
+  note.forEach((l, i) => k.text(l, M + 12, y + 31 + i * 11, 8, C.ink));
   footer(2);
 
   // ============================== PAGE 3
@@ -460,7 +485,8 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
     k.text(lab, x + 9, hy + 17, 7, C.grey); k.text(val, x + 9, hy + 36, 15, C.ink, true); k.text(sub, x + 9, hy + 48, 6.2, C.grey);
   });
   k.rect(M, hy + 62, CW, 40, C.light, C.line, 6);
-  const about = doc.splitTextToSize("Charts plot 15-minute averages of your node's readings for the selected day. AQI is calculated from PM2.5 with the US EPA breakpoints. The outlook is a rule-based reading of your own trends, not an official forecast. Alarm limits are the thresholds saved in Settings.", CW - 24) as string[];
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.2);
+  const about = doc.splitTextToSize(`Charts plot ${bucketMin}-minute averages of your node's readings for the hours with data on the selected day. AQI is calculated from PM2.5 with the US EPA breakpoints. The outlook is a rule-based reading of your own trends, not an official forecast. Alarm limits are the thresholds saved in Settings.`, CW - 24) as string[];
   about.forEach((l, i) => k.text(l, M + 12, hy + 76 + i * 9.5, 7.2, C.ink));
   footer(3);
 

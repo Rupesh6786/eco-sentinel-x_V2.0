@@ -18,7 +18,6 @@ import { Route as ParticulateRouteImport } from './routes/particulate'
 import { Route as PowerRouteImport } from './routes/power'
 import { Route as PressureRouteImport } from './routes/pressure'
 import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SystemRouteImport } from './routes/system'
 
@@ -67,11 +66,6 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -93,7 +87,6 @@ export interface FileRoutesByFullPath {
   '/power': typeof PowerRoute
   '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -107,7 +100,6 @@ export interface FileRoutesByTo {
   '/power': typeof PowerRoute
   '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -122,7 +114,6 @@ export interface FileRoutesById {
   '/power': typeof PowerRoute
   '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -138,7 +129,6 @@ export interface FileRouteTypes {
     | '/power'
     | '/pressure'
     | '/profile'
-    | '/reports'
     | '/settings'
     | '/system'
   fileRoutesByTo: FileRoutesByTo
@@ -152,7 +142,6 @@ export interface FileRouteTypes {
     | '/power'
     | '/pressure'
     | '/profile'
-    | '/reports'
     | '/settings'
     | '/system'
   id:
@@ -166,7 +155,6 @@ export interface FileRouteTypes {
     | '/power'
     | '/pressure'
     | '/profile'
-    | '/reports'
     | '/settings'
     | '/system'
   fileRoutesById: FileRoutesById
@@ -181,7 +169,6 @@ export interface RootRouteChildren {
   PowerRoute: typeof PowerRoute
   PressureRoute: typeof PressureRoute
   ProfileRoute: typeof ProfileRoute
-  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SystemRoute: typeof SystemRoute
 }
@@ -251,13 +238,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -285,7 +265,6 @@ const rootRouteChildren: RootRouteChildren = {
   PowerRoute: PowerRoute,
   PressureRoute: PressureRoute,
   ProfileRoute: ProfileRoute,
-  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SystemRoute: SystemRoute,
 }
