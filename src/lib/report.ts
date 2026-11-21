@@ -99,6 +99,21 @@ function buildEvents(rs: Reading[], th: ReportThresholds): Evt[] {
 }
 
 // ---------------------------------------------------------------- drawing kit
+// Round an automatic axis to 4 even, human-friendly steps (1, 2, 2.5, 5 x 10^n).
+function niceRange(lo: number, hi: number, fixLo?: number, fixHi?: number): [number, number] {
+  const raw = (hi - lo) / 4;
+  if (!(raw > 0) || fixLo !== undefined && fixHi !== undefined) return [lo, hi];
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  for (const m of [mag, mag * 10]) for (const f of [1, 2, 2.5, 5, 10]) {
+    const st = f * m;
+    if (st < raw - 1e-12) continue;
+    if (fixLo !== undefined) { if (fixLo + 4 * st >= hi - 1e-9) return [fixLo, fixLo + 4 * st]; }
+    else if (fixHi !== undefined) { if (fixHi - 4 * st <= lo + 1e-9) return [fixHi - 4 * st, fixHi]; }
+    else { const l = Math.floor(lo / st + 1e-9) * st; if (l + 4 * st >= hi - 1e-9) return [l, l + 4 * st]; }
+  }
+  return [lo, hi];
+}
+
 type Line = { name: string; color: string; pts: Pt[]; fillTo?: number; width?: number };
 type Ref = { y: number; color: string; label: string };
 
@@ -107,6 +122,8 @@ class Kit {
   // visible part of the day on every time-axis chart (hours, 0..24); set from the data in buildReport
   xLo = 0;
   xHi = 24;
+  // a silence longer than this (hours) breaks a line chart instead of being bridged
+  gapH = 0.5;
   constructor(doc: jsPDF) { this.doc = doc; }
   fill(h: string) { this.doc.setFillColor(...hex(h)); }
   stroke(h: string) { this.doc.setDrawColor(...hex(h)); }
@@ -181,9 +198,10 @@ class Kit {
       for (const l of live) for (const p of l.pts) { if (o.min === undefined) lo = Math.min(lo, p.y); if (o.max === undefined) hi = Math.max(hi, p.y); }
       for (const r of o.refs ?? []) { if (o.min === undefined) lo = Math.min(lo, r.y); if (o.max === undefined) hi = Math.max(hi, r.y); }
       if (hi - lo < 1e-9) hi = lo + 1;
-      const pad = (hi - lo) * 0.08;
+      const pad = (hi - lo) * 0.03;
       if (o.min === undefined) lo -= pad;
       if (o.max === undefined) hi += pad;
+      [lo, hi] = niceRange(lo, hi, o.min, o.max);
     }
     const sx = (v: number) => px + ((v - this.xLo) / (this.xHi - this.xLo)) * pw;
     const sy = (v: number) => py + ph - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * ph;
@@ -194,29 +212,38 @@ class Kit {
       this.stroke(C.line); this.doc.line(px, yy, px + pw, yy);
       this.text(v.toFixed(d), px - 4, yy + 2, 6, C.grey, false, "right");
     }
-    this.stroke(C.line); this.doc.line(px, py + ph, px + pw, py + ph);
     // time axis: only the hours that have data, with a tick step that keeps about 6 labels
     const span = this.xHi - this.xLo;
     const step = [0.25, 0.5, 1, 2, 3, 4, 6].find((s) => span / s <= 6) ?? 6;
     for (let t = Math.ceil(this.xLo / step - 1e-9) * step; t <= this.xHi + 1e-9; t += step) {
       const hh = Math.floor(t + 1e-9), mm = Math.round((t - hh) * 60);
       const tx = sx(t);
-      this.stroke(C.line); this.doc.line(tx, py + ph, tx, py + ph + 2.5);
+      this.stroke(C.line); this.doc.setLineWidth(0.4); this.doc.line(tx, py, tx, py + ph);
       this.text(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, tx, py + ph + 10, 6, C.grey, false, "center");
     }
-    for (const l of live) {
-      const pts = l.pts.map((p) => [sx(p.x), sy(p.y)] as [number, number]);
-      if (l.fillTo !== undefined && pts.length > 1) {
-        const base = sy(l.fillTo);
-        this.poly([[pts[0]![0], base], ...pts, [pts[pts.length - 1]![0], base]], tint(l.color, 0.16));
+    // Break every line wherever the node sent nothing for a while, so gaps are shown as gaps
+    // instead of being joined by a misleading straight line.
+    const segs = (pts: Pt[]) => {
+      const out: Pt[][] = []; let cur: Pt[] = [];
+      for (const p of pts) {
+        if (cur.length && p.x - cur[cur.length - 1]!.x > this.gapH) { out.push(cur); cur = []; }
+        cur.push(p);
       }
+      if (cur.length) out.push(cur);
+      return out.map((s) => s.map((p) => [sx(p.x), sy(p.y)] as [number, number]));
+    };
+    for (const l of live) {
+      if (l.fillTo === undefined) continue;
+      const base = sy(l.fillTo);
+      for (const s of segs(l.pts)) if (s.length > 1) this.poly([[s[0]![0], base], ...s, [s[s.length - 1]![0], base]], tint(l.color, 0.16));
     }
     for (const r of o.refs ?? []) {
       const yy = sy(r.y);
       this.stroke(r.color); this.doc.setLineWidth(0.7); this.doc.setLineDashPattern([3, 2], 0); this.doc.line(px, yy, px + pw, yy); this.doc.setLineDashPattern([], 0);
       this.text(r.label, px + pw - 2, yy - 2, 5.8, r.color, false, "right");
     }
-    for (const l of live) this.polyline(l.pts.map((p) => [sx(p.x), sy(p.y)] as [number, number]), l.color, l.width ?? 1.1);
+    this.stroke(C.mute); this.doc.setLineWidth(0.5); this.doc.line(px, py + ph, px + pw, py + ph);
+    for (const l of live) for (const s of segs(l.pts)) this.polyline(s, l.color, l.width ?? 1.1);
     if (lines.length > 1) {
       let lx = px + 2;
       for (const l of lines) {
@@ -226,18 +253,19 @@ class Kit {
     }
   }
 
-  bars(x: number, y: number, w: number, h: number, vals: { v: number; color: string; label?: string }[], max: number) {
+  bars(x: number, y: number, w: number, h: number, vals: { v: number; color: string; label?: string; none?: boolean }[], max: number) {
     const pl = 28, pb = 14, pt = 6, pw = w - pl - 8, ph = h - pb - pt, py = y + pt, px = x + pl;
     this.doc.setLineWidth(0.4);
-    for (let i = 0; i <= 3; i++) {
-      const yy = py + ph - (ph * i) / 3;
+    for (let i = 0; i <= 4; i++) {
+      const yy = py + ph - (ph * i) / 4;
       this.stroke(C.line); this.doc.line(px, yy, px + pw, yy);
-      this.text(((max * i) / 3).toFixed(0), px - 4, yy + 2, 6, C.grey, false, "right");
+      this.text(((max * i) / 4).toFixed(0), px - 4, yy + 2, 6, C.grey, false, "right");
     }
     const bw = pw / vals.length;
     vals.forEach((b, i) => {
       const bh = Math.min(1, Math.max(0, b.v / max)) * ph;
-      if (bh > 0) this.rect(px + i * bw + bw * 0.14, py + ph - bh, bw * 0.72, bh, b.color);
+      if (b.none) this.rect(px + i * bw + bw * 0.14, py + ph - 2, bw * 0.72, 2, C.line);
+      else if (bh > 0) this.rect(px + i * bw + bw * 0.14, py + ph - bh, bw * 0.72, bh, b.color);
       if (b.label) this.text(b.label, px + i * bw + bw / 2, py + ph + 10, 6, C.grey, false, "center");
     });
   }
@@ -281,10 +309,17 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   const hasP = rs.some((r) => isNum(r.pressure) && r.pressure > 300);
   const pPick = (r: Reading) => (isNum(r.pressure) && r.pressure > 300 ? r.pressure : undefined);
   const dewPick = (r: Reading) => (isNum(r.dew_point) ? r.dew_point : undefined);
+  // Dallas DS18B20 reports 0 when the probe is missing, so treat 0 as "no reading"
+  const probePick = (r: Reading) => (isNum(r.probe_temp) && r.probe_temp !== 0 ? r.probe_temp : undefined);
+  const hasProbe = rs.some((r) => probePick(r) !== undefined);
+  // typical sample interval (minutes): drives the "no data" gap threshold on the charts and the coverage strip
+  const gaps = rs.slice(1).map((r, i) => (r.ts - rs[i]!.ts) / 60_000).filter((v) => v > 0).sort((a, b) => a - b);
+  const medMin = gaps.length ? gaps[Math.floor(gaps.length / 2)]! : 5;
+  k.gapH = Math.max(bucketMin * 3, medMin * 3, 15) / 60;
 
   const S = {
     aqi: stat(rs, (r) => r.aqi), pm25: stat(rs, (r) => r.pm25), pm10: stat(rs, (r) => r.pm10), tmp: stat(rs, (r) => r.temperature),
-    hum: stat(rs, (r) => r.humidity), dew: stat(rs, dewPick), prs: stat(rs, pPick), lux: stat(rs, (r) => r.lux),
+    hum: stat(rs, (r) => r.humidity), probe: stat(rs, probePick), dew: stat(rs, dewPick), prs: stat(rs, pPick), lux: stat(rs, (r) => r.lux),
     mq2: stat(rs, (r) => r.mq2_ppm), mq7: stat(rs, (r) => r.mq7_ppm), mq135: stat(rs, (r) => r.mq135_ppm),
   };
   const aqiMean = S.aqi?.avg ?? computeAqi(S.pm25?.avg ?? 0);
@@ -298,9 +333,10 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   const dDay = isNum(pFirst) && isNum(pLast) ? pLast - pFirst : 0;
   const hw = (CW - 12) / 2;
 
+  const generated = new Date().toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
   const footer = (n: number) => {
     k.stroke(C.line); doc.setLineWidth(0.6); doc.line(M, 812, PW - M, 812);
-    k.text(`${SITE}  |  Environmental Monitoring Report  |  ${nodeId}  |  ${dateShort} ${new Date(start).getFullYear()}`, M, 824, 6.8, C.grey);
+    k.text(`${SITE}  |  Environmental Monitoring Report  |  ${nodeId}  |  ${dateShort} ${new Date(start).getFullYear()}  |  Generated ${generated}`, M, 824, 6.8, C.grey);
     k.text(`Page ${n} of 3`, PW - M, 824, 6.8, C.grey, true, "right");
     if (sample) k.text("SAMPLE DATA - generated to preview the report layout. Real reports use readings stored in your Firestore node.", M, 834, 6.2, C.red);
   };
@@ -316,33 +352,41 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   k.text("Environmental Monitoring Report", M, 80, 24, C.white, true);
   k.text("Daily air quality, weather and sensor performance summary", M, 97, 9, "#D8D6CC");
   k.text(dateLong, PW - M, 40, 15, C.yel, true, "right"); k.text(weekday, PW - M, 53, 8, "#D8D6CC", false, "right");
+  k.text(`Data window  ${hhmm(rs[0]!.ts)} - ${hhmm(last.ts)}  (${rs.length} readings)`, PW - M, 66, 7, C.mute, false, "right");
   k.text("Node ID", PW - M, 84, 6.8, C.mute, false, "right"); doc.setFont("courier", "bold"); doc.setFontSize(10); k.ink(C.white); doc.text(nodeId, PW - M, 96, { align: "right" });
 
   const y0 = 126;
-  k.rect(M, y0, CW, 142, C.light, C.line, 6);
-  k.rect(M + 10, y0 + 10, 104, 122, cat.color, undefined, 6);
+  const BH = 152;
+  k.rect(M, y0, CW, BH, C.light, C.line, 6);
+  k.rect(M + 10, y0 + 10, 104, BH - 20, cat.color, undefined, 6);
   k.text("MEAN AQI", M + 62, y0 + 26, 7.5, cat.text, true, "center");
   k.text(aqiMean.toFixed(0), M + 62, y0 + 66, 38, cat.text, true, "center");
   // measure the label with the font it is drawn in (bold 8.5), otherwise the wrap width is wrong
   doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
   const catLines = doc.splitTextToSize(cat.label, 90) as string[];
-  const ly = y0 + 84;
+  const ly = y0 + 88;
   catLines.forEach((l, i) => k.text(l, M + 62, ly + i * 10.5, 8.5, cat.text, true, "center"));
-  k.stroke(cat.text); doc.setLineWidth(0.4); doc.line(M + 26, y0 + 112, M + 98, y0 + 112);
-  k.text(`peak ${fmt(S.aqi?.max, 0)} at ${S.aqi ? hhmm(S.aqi.tMax) : "-"}`, M + 62, y0 + 124, 7, cat.text, false, "center");
+  k.stroke(cat.text); doc.setLineWidth(0.4); doc.line(M + 26, y0 + BH - 38, M + 98, y0 + BH - 38);
+  k.text(`peak ${fmt(S.aqi?.max, 0)} at ${S.aqi ? hhmm(S.aqi.tMax) : "-"}`, M + 62, y0 + BH - 26, 7, cat.text, false, "center");
 
   const tx = M + 126, tw = CW - 136;
   let yy = y0 + 14;
   k.text("Weather expert summary", tx, yy + 4, 9.5, C.ink, true); yy += 14;
-  yy += k.paragraph("Air.", `Air quality averaged AQI ${aqiMean.toFixed(0)} (${cat.label.toLowerCase()}). PM2.5 averaged ${fmt(S.pm25?.avg)} µg/m³, about ${((S.pm25?.avg ?? 0) / 15).toFixed(1)}x the WHO 24-hour guideline of 15 µg/m³, and crossed your ${th.pm25} µg/m³ alarm limit in ${over} readings (${((over / rs.length) * 100).toFixed(1)}% of the day), mainly around ${S.pm25 ? hhmm(S.pm25.tMax) : "-"}.`, tx, yy, tw) + 4;
-  if (S.tmp) yy += k.paragraph("Thermal comfort.", `Temperature ranged ${S.tmp.min.toFixed(1)} to ${S.tmp.max.toFixed(1)} °C (mean ${S.tmp.avg.toFixed(1)}) with a peak at ${hhmm(S.tmp.tMax)}.${S.hum ? ` Humidity swung between ${S.hum.min.toFixed(0)}% and ${S.hum.max.toFixed(0)}%.` : ""}${S.dew ? ` The mean dew point of ${S.dew.avg.toFixed(1)} °C made the air feel ${dewComfort(S.dew.avg)}.` : ""}`, tx, yy, tw) + 4;
+  const alarmTxt = over > 0
+    ? `crossed your ${th.pm25} µg/m³ alarm limit in ${over} readings (${((over / rs.length) * 100).toFixed(1)}% of the day), mainly around ${S.pm25 ? hhmm(S.pm25.tMax) : "-"}`
+    : `stayed below your ${th.pm25} µg/m³ alarm limit, peaking at ${fmt(S.pm25?.max)} µg/m³ at ${S.pm25 ? hhmm(S.pm25.tMax) : "-"}`;
+  yy += k.paragraph("Air.", `Air quality averaged AQI ${aqiMean.toFixed(0)} (${cat.label.toLowerCase()}). PM2.5 averaged ${fmt(S.pm25?.avg)} µg/m³, about ${((S.pm25?.avg ?? 0) / 15).toFixed(1)}x the WHO 24-hour guideline of 15 µg/m³, and ${alarmTxt}.`, tx, yy, tw) + 4;
+  if (S.tmp) {
+    const off = S.probe ? S.tmp.avg - S.probe.avg : undefined;
+    yy += k.paragraph("Thermal comfort.", `The AHT20 read ${S.tmp.min.toFixed(1)} to ${S.tmp.max.toFixed(1)} °C (mean ${S.tmp.avg.toFixed(1)}), peaking at ${hhmm(S.tmp.tMax)}.${S.probe && isNum(off) ? ` The Dallas probe averaged ${S.probe.avg.toFixed(1)} °C, so the AHT20 ran ${Math.abs(off).toFixed(1)} °C ${off >= 0 ? "warmer" : "cooler"}${off >= 1.5 ? " (likely enclosure heating)" : ""}.` : ""}${S.hum ? ` Humidity swung between ${S.hum.min.toFixed(0)}% and ${S.hum.max.toFixed(0)}%` : ""}${S.dew ? `, with a mean dew point of ${S.dew.avg.toFixed(1)} °C (${dewComfort(S.dew.avg)} air)` : ""}${S.hum ? "." : ""}`, tx, yy, tw) + 4;
+  }
   if (hasP && isNum(pFirst) && isNum(pLast)) yy += k.paragraph("Pressure.", `Pressure moved from ${pFirst.toFixed(1)} to ${pLast.toFixed(1)} hPa (${dDay >= 0 ? "+" : ""}${dDay.toFixed(1)} hPa on the day) and changed ${d3 >= 0 ? "+" : ""}${d3.toFixed(1)} hPa over the last three hours, which points to ${outlook(d3)}.`, tx, yy, tw) + 4;
 
-  const ky = y0 + 142 + 12, kw = (CW - 5 * 7) / 6;
+  const ky = y0 + BH + 12, kw = (CW - 5 * 7) / 6;
   const kpis: [string, string, string, string][] = [
     ["Mean AQI", aqiMean.toFixed(0), cat.label.split(" for")[0]!, cat.color],
     ["PM2.5 mean", fmt(S.pm25?.avg), "µg/m³", C.red],
-    ["Temperature", fmt(S.tmp?.avg), S.tmp ? `°C  (${S.tmp.min.toFixed(0)} to ${S.tmp.max.toFixed(0)})` : "°C", C.org],
+    ["Temperature", fmt(S.tmp?.avg), S.probe ? `°C  AHT20 | probe ${S.probe.avg.toFixed(1)}` : "°C  AHT20", C.org],
     ["Humidity", fmt(S.hum?.avg, 0), S.dew ? `%  dew pt ${S.dew.avg.toFixed(1)} °C` : "%", C.blue],
     ["Pressure", fmt(S.prs?.avg), hasP ? `hPa  (${dDay >= 0 ? "+" : ""}${dDay.toFixed(1)} on day)` : "no BMP280 data", C.teal],
     ["Peak light", S.lux ? `${(S.lux.max / 1000).toFixed(1)}k` : "-", S.lux ? `lx at ${hhmm(S.lux.tMax)}` : "lx", C.gold],
@@ -358,11 +402,14 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   k.card(M, cy, CW, 166, "PM2.5 and PM10 trend", "µg/m³", C.red);
   k.lineChart(M + 4, cy + 20, CW - 8, 142, [{ name: "PM10", color: C.blue, pts: ser((r) => r.pm10), fillTo: 0 }, { name: "PM2.5", color: C.red, pts: ser((r) => r.pm25), fillTo: 0, width: 1.4 }], { min: 0, refs: [{ y: th.pm25, color: C.red, label: `Alarm limit ${th.pm25}` }] });
   cy += 166 + 12;
-  k.section(cy, "Temperature and humidity", "ambient conditions"); cy += 20;
-  k.card(M, cy, hw, 138, "Temperature and dew point", "°C", C.org);
-  k.lineChart(M + 4, cy + 20, hw - 8, 114, [{ name: "Temperature", color: C.org, pts: ser((r) => r.temperature), fillTo: S.dew ? S.dew.min - 1 : undefined }, { name: "Dew point", color: C.teal, pts: ser(dewPick) }]);
+  k.section(cy, "Temperature and humidity", "AHT20 air sensor and DS18B20 probe"); cy += 20;
+  k.card(M, cy, hw, 138, "Temperature: AHT20 vs Dallas probe", "°C", C.org);
+  k.lineChart(M + 4, cy + 20, hw - 8, 114, [
+    { name: "AHT20 (air)", color: C.org, pts: ser((r) => r.temperature), width: 1.3 },
+    ...(hasProbe ? [{ name: "DS18B20 probe", color: C.teal, pts: ser(probePick), width: 1.3 }] : []),
+  ]);
   k.card(M + hw + 12, cy, hw, 138, "Relative humidity", "%", C.blue);
-  k.lineChart(M + hw + 16, cy + 20, hw - 8, 114, [{ name: "Humidity", color: C.blue, pts: ser((r) => r.humidity), fillTo: 0 }], { max: 100 });
+  k.lineChart(M + hw + 16, cy + 20, hw - 8, 114, [{ name: "Humidity (AHT20)", color: C.blue, pts: ser((r) => r.humidity), fillTo: 0 }], { max: 100 });
   cy += 138 + 12;
   k.rect(M, cy, CW, 800 - cy, C.ink, undefined, 6);
   k.text("Expert outlook", M + 12, cy + 17, 9.5, C.yel, true);
@@ -391,22 +438,33 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   k.lineChart(M + hw + 16, y + 20, hw - 8, 108, [{ name: "Pressure", color: C.blue, pts: ser(pPick), fillTo: S.prs ? S.prs.min - 1 : undefined }], { refs: [{ y: 1013.25, color: C.grey, label: "Std sea level" }] });
   y += 132 + 14;
   k.section(y, "Light and air quality index", "ambient illuminance and hourly AQI"); y += 20;
-  k.card(M, y, CW, 140, "Ambient light", "lux", C.gold);
-  k.lineChart(M + 4, y + 20, CW - 8, 116, [{ name: "Illuminance", color: C.gold, pts: ser((r) => r.lux), fillTo: 0 }], { min: 0 });
-  y += 140 + 10;
+  k.card(M, y, CW, 124, "Ambient light", "lux", C.gold);
+  k.lineChart(M + 4, y + 20, CW - 8, 100, [{ name: "Illuminance", color: C.gold, pts: ser((r) => r.lux), fillTo: 0 }], { min: 0 });
+  y += 124 + 10;
   const nBars = xHi - xLo, lblStep = nBars > 16 ? 3 : nBars > 8 ? 2 : 1;
   const hourly = Array.from({ length: nBars }, (_, j) => {
     const h = xLo + j;
     const v = rs.filter((r) => new Date(r.ts).getHours() === h).map((r) => r.aqi).filter(isNum);
     const m = v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
-    return { v: m, color: aqiCat(m).color, label: j % lblStep === 0 ? `${String(h).padStart(2, "0")}h` : undefined };
+    return { v: m, none: !v.length, color: aqiCat(m).color, label: j % lblStep === 0 ? `${String(h).padStart(2, "0")}h` : undefined };
   });
-  k.card(M, y, hw, 142, "Hourly mean AQI", "index", C.red);
-  k.bars(M + 4, y + 20, hw - 8, 118, hourly, Math.max(100, Math.ceil(Math.max(...hourly.map((b) => b.v)) / 50) * 50));
+  k.card(M, y, hw, 136, "Hourly mean AQI", "index", C.red);
+  k.bars(M + 4, y + 20, hw - 8, 112, hourly, Math.max(100, Math.ceil(Math.max(...hourly.map((b) => b.v)) / 100) * 100));
   const bands: [string, number, number, string][] = [["0-12  Good", 0, 12, "#2FA84F"], ["12-35  Moderate", 12, 35.5, "#F2C500"], ["35-55  Sensitive", 35.5, 55.5, C.org], ["55-150  Unhealthy", 55.5, 150.5, C.red], ["150+  Very unhealthy", 150.5, 1e9, "#8F3F97"]];
-  k.card(M + hw + 12, y, hw, 142, "PM2.5 distribution", "samples", C.red);
-  k.hBars(M + hw + 16, y + 22, hw - 8, 116, bands.map(([label, lo, hi, color]) => ({ label, color, v: rs.filter((r) => r.pm25 >= lo && r.pm25 < hi).length })));
-  y += 142 + 14;
+  k.card(M + hw + 12, y, hw, 136, "PM2.5 distribution", "samples", C.red);
+  k.hBars(M + hw + 16, y + 22, hw - 8, 110, bands.map(([label, lo, hi, color]) => ({ label, color, v: rs.filter((r) => r.pm25 >= lo && r.pm25 < hi).length })));
+  y += 136 + 10;
+  // hour-by-hour data coverage: how much of each hour the node actually reported (vs its usual sample rate)
+  const perHour = Math.max(1, 60 / Math.max(medMin, 0.05));
+  const cover = Array.from({ length: 24 }, (_, h) => Math.min(1, rs.filter((r) => new Date(r.ts).getHours() === h).length / perHour));
+  k.card(M, y, CW, 56, "Data coverage by hour", `${cover.filter((c) => c > 0).length} of 24 hours with readings`, C.teal);
+  const cw = (CW - 24) / 24;
+  cover.forEach((c, i) => {
+    doc.setFillColor(...(c > 0 ? tint(C.teal, 0.25 + 0.75 * c) : hex(C.line)));
+    doc.rect(M + 12 + i * cw + 0.75, y + 22, cw - 1.5, 14, "F");
+    if (i % 3 === 0) k.text(`${String(i).padStart(2, "0")}h`, M + 12 + i * cw + cw / 2, y + 47, 6, C.grey, false, "center");
+  });
+  y += 56 + 10;
   doc.setFont("helvetica", "normal"); doc.setFontSize(8);
   const note = doc.splitTextToSize("MQ-series sensors respond to several gases at once and drift with temperature and humidity, so treat them as relative indicators of change rather than lab-grade concentrations. A reading above its limit is a prompt to check the room, not a diagnosis. For calibrated particulate values, compare the dust sensor with a reference monitor when possible.", CW - 24) as string[];
   k.rect(M, y, CW, 30 + note.length * 11 + 6, C.light, C.line, 6);
@@ -419,9 +477,9 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   y = 56;
   k.section(y, "Power and connectivity", "battery, charging and Wi-Fi"); y += 20;
   k.card(M, y, hw, 128, "Battery level and charging", "%", C.teal);
-  k.lineChart(M + 4, y + 20, hw - 8, 104, [{ name: "Battery %", color: C.teal, pts: ser((r) => r.battery_percent), fillTo: 0 }], { min: 0, max: 110 });
+  k.lineChart(M + 4, y + 20, hw - 8, 104, [{ name: "Battery %", color: C.teal, pts: ser((r) => r.battery_percent), fillTo: 0 }], { min: 0, max: 100 });
   k.card(M + hw + 12, y, hw, 128, "Wi-Fi signal strength", "dBm", C.blue);
-  k.lineChart(M + hw + 16, y + 20, hw - 8, 104, [{ name: "RSSI", color: C.blue, pts: ser((r) => (r.rssi > -99 ? r.rssi : undefined)) }], { min: -90, max: -45, refs: [{ y: -75, color: C.red, label: "Weak below -75" }] });
+  k.lineChart(M + hw + 16, y + 20, hw - 8, 104, [{ name: "RSSI", color: C.blue, pts: ser((r) => (r.rssi > -99 ? r.rssi : undefined)) }], { min: -100, max: -20, refs: [{ y: -75, color: C.red, label: "Weak below -75" }] });
   y += 128 + 14;
   k.section(y, "Daily statistics", "min, mean and max for every sensor"); y += 18;
   const row = (label: string, unit: string, pick: (r: Reading) => number | undefined, d = 1): string[] => {
@@ -431,7 +489,7 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   const body = [
     row("Air quality index", "AQI", (r) => r.aqi, 0), row("PM2.5", "µg/m³", (r) => r.pm25), row("PM10", "µg/m³", (r) => r.pm10), row("Dust density", "mg/m³", (r) => r.dust_density, 3),
     row("MQ-2 smoke / LPG", "ppm", (r) => r.mq2_ppm, 0), row("MQ-7 carbon monoxide", "ppm", (r) => r.mq7_ppm), row("MQ-135 air quality", "ppm", (r) => r.mq135_ppm),
-    row("Temperature (DHT11)", "°C", (r) => r.temperature), row("Probe temperature (DS18B20)", "°C", (r) => (r.probe_temp ? r.probe_temp : undefined)), row("Relative humidity", "%", (r) => r.humidity, 0), row("Dew point", "°C", dewPick),
+    row("Temperature (AHT20)", "°C", (r) => r.temperature), row("Probe temperature (Dallas DS18B20)", "°C", probePick), row("Relative humidity (AHT20)", "%", (r) => r.humidity, 0), row("Dew point", "°C", dewPick),
     row("Pressure (BMP280)", "hPa", pPick), row("Ambient light", "lux", (r) => r.lux, 0), row("Battery", "%", (r) => r.battery_percent, 0), row("Boost rail", "V", (r) => r.boost_voltage, 2),
     row("Wi-Fi RSSI", "dBm", (r) => (r.rssi > -99 ? r.rssi : undefined), 0), row("Free heap", "KB", (r) => r.free_heap / 1024, 0),
   ];
@@ -442,6 +500,8 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
     headStyles: { fillColor: hex(C.yel), textColor: hex(C.ink), fontStyle: "bold" },
     alternateRowStyles: { fillColor: hex(C.light) },
     columnStyles: { 0: { cellWidth: 170 }, 1: { textColor: hex(C.grey) }, 2: { halign: "right" }, 3: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 5: { halign: "right" } },
+    // right-align the numeric column headers so they sit over their values
+    didParseCell: (d) => { if (d.section === "head" && d.column.index >= 2) d.cell.styles.halign = "right"; },
   });
   y = ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY) + 14;
 
@@ -486,7 +546,7 @@ export async function buildReport({ readings, day, nodeId, thresholds: th, sampl
   });
   k.rect(M, hy + 62, CW, 40, C.light, C.line, 6);
   doc.setFont("helvetica", "normal"); doc.setFontSize(7.2);
-  const about = doc.splitTextToSize(`Charts plot ${bucketMin}-minute averages of your node's readings for the hours with data on the selected day. AQI is calculated from PM2.5 with the US EPA breakpoints. The outlook is a rule-based reading of your own trends, not an official forecast. Alarm limits are the thresholds saved in Settings.`, CW - 24) as string[];
+  const about = doc.splitTextToSize(`Charts plot ${bucketMin}-minute averages of your node's readings for the hours with data on the selected day. A break in a line means the node sent no readings for that period. AQI is calculated from PM2.5 with the US EPA breakpoints. The outlook is a rule-based reading of your own trends, not an official forecast. Alarm limits are the thresholds saved in Settings.`, CW - 24) as string[];
   about.forEach((l, i) => k.text(l, M + 12, hy + 76 + i * 9.5, 7.2, C.ink));
   footer(3);
 
