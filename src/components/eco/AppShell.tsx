@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { LayoutDashboard, Wind, Sparkles, Thermometer, BatteryCharging, Database, Settings, UserRound, Menu, X, Radio, LogOut, Moon, Sun, Lightbulb, ScrollText } from "lucide-react";
+import { LayoutDashboard, Wind, Sparkles, Thermometer, BatteryCharging, Database, Settings, UserRound, Menu, X, Radio, LogOut, Moon, Sun, Lightbulb, ScrollText, Gauge } from "lucide-react";
 import { useTelemetry, fmtDateTime } from "@/lib/telemetry";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ const nav = [
   { to: "/environmental", label: "Environmental", icon: Thermometer },
   { to: "/power", label: "Power & System", icon: BatteryCharging },
   { to: "/light", label: "Light Intensity", icon: Lightbulb },
+  { to: "/pressure", label: "Barometric Pressure", icon: Gauge },
   { to: "/logs", label: "Data Logs", icon: Database },
   { to: "/system", label: "System Logs", icon: ScrollText },
   { to: "/settings", label: "Settings", icon: Settings },

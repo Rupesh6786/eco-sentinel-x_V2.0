@@ -16,7 +16,9 @@ import { Route as LightRouteImport } from './routes/light'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as ParticulateRouteImport } from './routes/particulate'
 import { Route as PowerRouteImport } from './routes/power'
+import { Route as PressureRouteImport } from './routes/pressure'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SystemRouteImport } from './routes/system'
 
@@ -55,9 +57,19 @@ const PowerRoute = PowerRouteImport.update({
   path: '/power',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PressureRoute = PressureRouteImport.update({
+  id: '/pressure',
+  path: '/pressure',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -79,7 +91,9 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
+  '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -91,7 +105,9 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
+  '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -104,7 +120,9 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/particulate': typeof ParticulateRoute
   '/power': typeof PowerRoute
+  '/pressure': typeof PressureRoute
   '/profile': typeof ProfileRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/system': typeof SystemRoute
 }
@@ -118,7 +136,9 @@ export interface FileRouteTypes {
     | '/logs'
     | '/particulate'
     | '/power'
+    | '/pressure'
     | '/profile'
+    | '/reports'
     | '/settings'
     | '/system'
   fileRoutesByTo: FileRoutesByTo
@@ -130,7 +150,9 @@ export interface FileRouteTypes {
     | '/logs'
     | '/particulate'
     | '/power'
+    | '/pressure'
     | '/profile'
+    | '/reports'
     | '/settings'
     | '/system'
   id:
@@ -142,7 +164,9 @@ export interface FileRouteTypes {
     | '/logs'
     | '/particulate'
     | '/power'
+    | '/pressure'
     | '/profile'
+    | '/reports'
     | '/settings'
     | '/system'
   fileRoutesById: FileRoutesById
@@ -155,7 +179,9 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   ParticulateRoute: typeof ParticulateRoute
   PowerRoute: typeof PowerRoute
+  PressureRoute: typeof PressureRoute
   ProfileRoute: typeof ProfileRoute
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SystemRoute: typeof SystemRoute
 }
@@ -211,11 +237,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PowerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pressure': {
+      id: '/pressure'
+      path: '/pressure'
+      fullPath: '/pressure'
+      preLoaderRoute: typeof PressureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile': {
       id: '/profile'
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -243,7 +283,9 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   ParticulateRoute: ParticulateRoute,
   PowerRoute: PowerRoute,
+  PressureRoute: PressureRoute,
   ProfileRoute: ProfileRoute,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SystemRoute: SystemRoute,
 }

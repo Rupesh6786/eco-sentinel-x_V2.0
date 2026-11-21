@@ -6,9 +6,9 @@ import { randomThemeId, type ThemeMode } from "./themes";
 // ============= Sensor catalog =============
 // Every gauge/graph group in the app maps to one of these keys. Users pick
 // their set on the Settings page; pages render only the enabled groups.
-export type SensorKey = "mq2" | "mq7" | "mq135" | "dust" | "env" | "power" | "light" | "probe";
+export type SensorKey = "mq2" | "mq7" | "mq135" | "dust" | "env" | "power" | "light" | "probe" | "pressure";
 
-export const SENSOR_KEYS: SensorKey[] = ["mq2", "mq7", "mq135", "dust", "env", "power", "light", "probe"];
+export const SENSOR_KEYS: SensorKey[] = ["mq2", "mq7", "mq135", "dust", "env", "power", "light", "probe", "pressure"];
 
 export const SENSOR_META: Record<SensorKey, { label: string; desc: string }> = {
   mq2: { label: "MQ-2 · Smoke / LPG", desc: "Combustible gas concentration in ppm" },
@@ -19,18 +19,20 @@ export const SENSOR_META: Record<SensorKey, { label: string; desc: string }> = {
   power: { label: "Power & System", desc: "Battery, TP4056 charging, Wi-Fi, heap and uptime" },
   light: { label: "Light Intensity", desc: "Ambient illuminance in lux" },
   probe: { label: "DS18B20 · Dallas Probe", desc: "Waterproof probe temperature in °C" },
+  pressure: { label: "BMP280 · Barometric Pressure", desc: "Atmospheric pressure in hPa with trend and altitude" },
 };
 
-// Sensors added after the first release. Profiles saved before
-// SENSOR_SCHEMA_VERSION 2 have no entry for them, so they default to ON
-// for those users instead of silently disappearing.
-const SENSOR_SCHEMA_VERSION = 2;
-const NEW_SENSOR_KEYS: SensorKey[] = ["light", "probe"];
+// Sensors added after the first release, and the schema version that
+// introduced each one. Profiles saved before that version have no entry for
+// the sensor, so it defaults to ON for them instead of silently disappearing.
+// Later versions respect whatever the user saved.
+const SENSOR_SCHEMA_VERSION = 3;
+const SENSOR_ADDED_IN: Partial<Record<SensorKey, number>> = { light: 2, probe: 2, pressure: 3 };
 
 function resolveSensors(d: any): SensorKey[] {
   const saved: unknown[] = Array.isArray(d?.sensors) ? d.sensors : SENSOR_KEYS;
-  const legacy = (typeof d?.sensorsVersion === "number" ? d.sensorsVersion : 1) < SENSOR_SCHEMA_VERSION;
-  return SENSOR_KEYS.filter((k) => saved.includes(k) || (legacy && NEW_SENSOR_KEYS.includes(k)));
+  const version = typeof d?.sensorsVersion === "number" ? d.sensorsVersion : 1;
+  return SENSOR_KEYS.filter((k) => saved.includes(k) || version < (SENSOR_ADDED_IN[k] ?? 0));
 }
 
 // ============= Profile =============

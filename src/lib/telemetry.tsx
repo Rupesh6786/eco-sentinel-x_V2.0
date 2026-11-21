@@ -114,7 +114,7 @@ const obool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v :
 
 // Supports the nested firmware payload (environment / gas / air / power / esp32s3 / link)
 // and keeps the older flat / alternate field names as fallbacks.
-function normalize(id: string, d: any): Reading {
+export function normalize(id: string, d: any): Reading {
   const env = d.environment ?? {}, gas = d.gas ?? {}, air = d.air ?? d.particulate ?? {};
   const pw = d.power ?? {}, hw = d.esp32s3 ?? d.system ?? {}, lk = d.link ?? d.system ?? {};
   const pm25 = num(d.pm25 ?? air.pm25);
